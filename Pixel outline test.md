@@ -1,5 +1,5 @@
 Pixel outline test
-#代码 #2D
+
 ``` javascript
 <!DOCTYPE HTML>
 <html>
@@ -65,16 +65,16 @@ Pixel outline test
 ### 像素的组成
 如果像素看作一个棋盘，比如说一个总像素值为100的正方形区域的话，那它就是由10*10方格组成的。
 如何确定某一个像素值的位置呢，参照下图⬇️⬇️⬇️
-![](Pixel%20outline%20test/Paper.%E6%83%B3%E6%B3%95.4.png)
+![](https://tva1.sinaimg.cn/large/006y8mN6gy1g8gq3p3wv1j31400u0kch.jpg)
 比如说，第7行第8列像素点。第一直觉是7*8，但是实际上第56个像素点并不是第7行第8列的像素，而是处于第5行第6列。
 这也就是上面图片和公式的由来。
 ``` javascript
 Imagedata = i*imagewidth + j
 ```
 ### 矩阵的计算方法
-![](Pixel%20outline%20test/CFCD188E-0C8C-4045-8110-9C1723B766FF.png)
-![](Pixel%20outline%20test/%E6%9C%AA%E7%9F%A5.png)
-![](Pixel%20outline%20test/%E6%9C%AA%E7%9F%A5%202.png)
+![](https://tva1.sinaimg.cn/large/006y8mN6gy1g8gq3pqyzkj30g80is0sz.jpg)
+![](https://tva1.sinaimg.cn/large/006y8mN6gy1g8gq3q4m7zj30b40b4q7o.jpg)
+![](https://tva1.sinaimg.cn/large/006y8mN6gy1g8gq3qi2prj30b40b443q.jpg)
 
 案例中用的是一个叫outline的内核。也就是内核中央是8，周围各自为-1。
 这个要如何计算呢，我们把整个图片看作一个3*3的像素区域。那依次他们每一个像素在数组中的序号就分别为[0],[1],[2],[3],[4],[5],[6],[7],[8]。
@@ -85,8 +85,8 @@ Imagedata = i*imagewidth + j
 这样这一个像素点就确认下来了。以此类推，我们使用for循环来遍历所有的像素点，让生成的图片中所有的像素都有都根据上面的等式来生成。
 - - - -
 如果对于↘️↗️↖️↙️⬆️⬇️⬅️➡️这几个像素点的值不知道怎么取的话，可以参照下图
-![](Pixel%20outline%20test/Paper.%E6%83%B3%E6%B3%95.4%202.png)
-![](Pixel%20outline%20test/Paper.%E6%83%B3%E6%B3%95.5.png)
+![](https://tva1.sinaimg.cn/large/006y8mN6gy1g8gq42pwm0j31400u04gi.jpg)
+![](https://tva1.sinaimg.cn/large/006y8mN6gy1g8gq3p3wv1j31400u0kch.jpg)
 - - - -
 ### 精华部分代码
 ``` javascript
