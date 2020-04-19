@@ -8,11 +8,12 @@ std::vector<ofVec2f> forcefield;
 float xoff = 0;
 float yoff = 0;
 float zoff = 0;
-
+float r;
 //
 
 //--------------------------------------------------------------
 void ofApp::setup(){
+//    ofSetFrameRate(30);
     ofBackground(20,20,20);
     ofSetBackgroundAuto(false);
     rows = int(ofGetWidth()/scl);
@@ -39,12 +40,12 @@ void ofApp::update(){
                 float angle = ofNoise(xoff,yoff,zoff)*TWO_PI*4;
                 forcefield[j*rows+i]=ofVec2f(cos(angle)*1.5,sin(angle)*1.5);
 //                std:cout<<forcefield[j*rows+i].x<<endl;
-                xoff+=0.01;
+                xoff+=0.05;
         }
-            yoff+=0.01;
-            zoff+=0.01;
+            yoff+=0.05;
+            zoff+=0.05;
         }
-
+//
 }
 
 //--------------------------------------------------------------
@@ -61,11 +62,35 @@ void ofApp::draw(){
         dots[i].draw(5);
 
     }
-
     
-
-
+//-------------------------------------------------------------- fortest
+//    ofSetColor(255, 255, 255);
+//    ofSetLineWidth(1);
+//    for(int i = 0; i < rows; i++){
+//        for(int j = 0; j <cols;j++){
+//            ofPushMatrix();
+//            ofTranslate(i*scl, j*scl);
+//            ofDrawLine(0, 0, forcefield[j*rows+i].x*10, forcefield[j*rows+i].y*10);
+//            ofPopMatrix();
+//
+//        }
+//    }
+//--------------------------------------------------------------fortest
+//            ofSetColor(255, 255, 255);
+//
+//            for(int i = 0; i < 10; i++){
+//                r = ofNoise(xoff)*20;
+//                std::cout<<i<<" "<<r<<endl;
+//                ofPushMatrix();
+//                ofTranslate(i*50+500, ofGetHeight()/2);
+//                ofDrawCircle(0, 0, r);
+//                ofPopMatrix();
+//                xoff+=0.05;
+//
+//            }
+//--------------------------------------------------------------
 }
+//--------------------------------------------------------------
 
 //--------------------------------------------------------------
 void ofApp::keyPressed(int key){
