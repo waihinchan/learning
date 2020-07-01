@@ -26,7 +26,7 @@
 
 使用了帧差技术. 具体可以看这里: 
 
-[](https://openframeworks.cc/ofBook/chapters/image_processing_computer_vision.html)
+[framediff](https://openframeworks.cc/ofBook/chapters/image_processing_computer_vision.html)
 
 基于帧差图片后应用opencv的轮廓查找器可以获得比较纯净的效果.
 
@@ -36,7 +36,7 @@
 
 关于查找轮廓内的点,这个帖子有比较详细的讨论:
 
-[](https://forum.openframeworks.cc/t/quickest-point-in-ofpolyline-method/13544/11)
+[pointinside](https://forum.openframeworks.cc/t/quickest-point-in-ofpolyline-method/13544/11)
 
 **已知问题:**
 
