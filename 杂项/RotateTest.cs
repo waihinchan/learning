@@ -1,5 +1,3 @@
-
-
 using UnityEngine;
 
 public class RotateTest : MonoBehaviour
@@ -7,10 +5,14 @@ public class RotateTest : MonoBehaviour
     //This is the Transform of the second GameObject
     public Vector3 dir1;
     public Vector3 dir2;
-
+    private MeshFilter mf;
+    private Vector3[] origVerts;
+    private Vector3[] newVerts;
     void Start()
     {
-        
+        mf = GetComponent<MeshFilter>();
+        origVerts = mf.mesh.vertices;
+        newVerts = new Vector3[origVerts.Length];
     }
 
     void Update()
@@ -18,16 +20,19 @@ public class RotateTest : MonoBehaviour
         Vector3 normalizeDir1 =  Vector3.Normalize(dir1); //归一化之后变成1
         Vector3 normalizeDir2 =  Vector3.Normalize(dir2); //归一化之后变成1
         Matrix4x4 m = GetRotateMartixFromVector(normalizeDir1,normalizeDir2);
-        Debug.Log(normalizeDir1);
-        Debug.Log(normalizeDir2);
-        Vector3 result = m.MultiplyVector(normalizeDir1);
-        Debug.Log(result);
-        result = Vector3.Normalize(result);
-        Debug.Log(result);
-        Debug.Log(result.magnitude);
-        Debug.Log(normalizeDir2.magnitude);
-        Debug.Log(Vector3.Dot(Vector3.Normalize(result),normalizeDir2));
 
+
+
+        Debug.DrawLine(new Vector3(0,0,0),dir2);
+        int i = 0;
+        while (i < origVerts.Length) {
+            newVerts[i] = m.MultiplyVector(origVerts[i]);
+            i++;
+        }
+        mf.mesh.vertices = newVerts;
+        Vector3 result = m.MultiplyPoint3x4(normalizeDir1);
+        result = Vector3.Normalize(result);
+        Debug.Log(Vector3.Dot(result,normalizeDir2));
     }
     Matrix4x4 GetRotateMartixFromVector(Vector3 _dir1,Vector3 _dir2){
         Vector3 rotateionAxis =  Vector3.Cross(_dir1,_dir2); //叉乘获得旋转轴
