@@ -1,5 +1,4 @@
-//This example shows how the rotation works between two GameObjects. Attach this to a GameObject.
-//Make sure to assign the GameObject you would like your GameObject to rotate towards in the Inspector
+
 
 using UnityEngine;
 
