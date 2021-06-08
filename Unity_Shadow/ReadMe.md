@@ -548,9 +548,229 @@ return saturate(dot(surface.normal, light.direction) * light.attenuation) * ligh
 
 至此我们就完成了对法线向量的偏移。
 
-后面再更新PCF的部分。不行了写了三天写的天昏地暗，找了很多参考和源代码还话了草图（草图一个都没用上）
+### **软阴影**
+
+实现软阴影的一个方式就是通过PCF多次采样从而获取比较柔和的阴影的效果。注意这里和上面提到的SHADOW_SAMPLER sampler_linear_clamp_compare 和 SHADOW_SAMPLER sampler_point_clamp_compare不是同一个东西。PCF和这里采样阴影的方式的效果是互相独立的，虽然从结果来看有一点点相似。
 
 > PCF
 The easiest way to improve this is to change the shadowmap’s sampler type to sampler2DShadow. The consequence is that when you sample the shadowmap once, the hardware will in fact also sample the neighboring texels, do the comparison for all of them, and return a float in [0,1] with a bilinear filtering of the comparison results.
 For instance, 0.5 means that 2 samples are in the shadow, and 2 samples are in the light.
 Note that it’s not the same than a single sampling of a filtered depth map ! A comparison always returns true or false; PCF gives a interpolation of 4 “true or false”.
+
+关于为什么要用PCF和一些其他平台的教程可以参考这里：
+
+[OpenGL 3D Game Tutorial 40: Percentage Closer Filtering](https://www.youtube.com/watch?v=TcbvOvmLSow)
+
+**2021-06-07更新**
+
+关于PCF算法其实类似于对图片应用一个卷积核来进行采样。而根据提到的：
+
+[Chapter 11. Shadow Map Antialiasing](https://developer.nvidia.com/gpugems/gpugems/part-ii-lighting-and-shadows/chapter-11-shadow-map-antialiasing)
+
+> Note that the sampling region is not aligned to texel boundaries. An aligned region would not achieve the antialiasing effect that we want.
+
+也就是说如果我们直接和纹素对齐是不能获取软阴影的效果的，所以是在两个像素之间进行插值。如下：
+
+![shadows%20b5b3b66d76a94abab8e78f6e8e1605bd/Untitled%2016.png](shadows%20b5b3b66d76a94abab8e78f6e8e1605bd/Untitled%2016.png)
+
+其实卷积核的概念是很好理解的，参考：
+
+[Image Kernels explained visually](https://setosa.io/ev/image-kernels/)
+
+[Image convolution examples](https://aishack.in/tutorials/image-convolution-examples/)
+
+而Unity里面关于tent filter有点复杂的其中一个原因就是像素点不是和卷积核中心对齐。而且其加权的方式是通过三角形覆盖的纹素面积而定的。
+
+然后我花了很多的心思和画图去解读这个temt filter的一些实现细节。这里只能给出一个大概的思路，具体的代码实现的细节就不一一展开了。其实这里读源码和画图的过程还是挺有意思的，给了一个教训就是源代码的注释一定要一行一行的去看！！
+
+首先是基于原教程下的写法是这样的
+
+[Directional Shadows](https://catlikecoding.com/unity/tutorials/custom-srp/directional-shadows/)
+
+```glsl
+float FilterDirectionalShadow (float3 positionSTS) {
+	#if defined(DIRECTIONAL_FILTER_SETUP)
+		float weights[DIRECTIONAL_FILTER_SAMPLES];
+		float2 positions[DIRECTIONAL_FILTER_SAMPLES];
+		float4 size = _ShadowAtlasSize.yyxx;
+		DIRECTIONAL_FILTER_SETUP(size, positionSTS.xy, weights, positions);
+		float shadow = 0;
+		for (int i = 0; i < DIRECTIONAL_FILTER_SAMPLES; i++) {
+			shadow += weights[i] * SampleDirectionalShadowAtlas(
+				float3(positions[i].xy, positionSTS.z)
+			);
+		}
+		return shadow;
+	#else
+		return SampleDirectionalShadowAtlas(positionSTS);
+	#endif
+}
+```
+
+这里很显然通过一个DIRECTIONAL_FILTER_SETUP函数来返回一个权重和采样点的列表。然后用一个循环叠加这些周围像素点的采样结果并乘上权重。这个和卷积核的概念其实是一致的，类如什么高斯卷积核，或者是什么soba算子之类的。
+
+而这个DIRECTIONAL_FILTER_SETUP的宏是这么定义的：
+
+```glsl
+#if defined(_DIRECTIONAL_PCF3)
+	#define DIRECTIONAL_FILTER_SAMPLES 4
+	#define DIRECTIONAL_FILTER_SETUP SampleShadow_ComputeSamples_Tent_3x3
+#elif defined(_DIRECTIONAL_PCF5)
+	#define DIRECTIONAL_FILTER_SAMPLES 9
+	#define DIRECTIONAL_FILTER_SETUP SampleShadow_ComputeSamples_Tent_5x5
+#elif defined(_DIRECTIONAL_PCF7)
+	#define DIRECTIONAL_FILTER_SAMPLES 16
+	#define DIRECTIONAL_FILTER_SETUP SampleShadow_ComputeSamples_Tent_7x7
+#endif
+```
+
+简单来说就是通过一些设置来选择对应的tent filter采样器。下面说的均以SampleShadow_ComputeSamples_Tent_3x3为例子。
+
+然后我就对了一下SampleShadow_ComputeSamples_Tent_3x3这个函数，然后惊奇的发现
+
+```glsl
+void SampleShadow_ComputeSamples_Tent_3x3(real4 shadowMapTexture_TexelSize, real2 coord, out real fetchesWeights[4], out real2 fetchesUV[4])
+```
+
+这里的定义返回的采样点数组居然长度是4而不是9。然后我又翻回去教程里面找到了这么一个图
+
+这个采样的方式其实应该是这样的：（摘自[https://catlikecoding.com/unity/tutorials/advanced-rendering/depth-of-field/](https://catlikecoding.com/unity/tutorials/advanced-rendering/depth-of-field/)）
+
+![shadows%20b5b3b66d76a94abab8e78f6e8e1605bd/Untitled%2017.png](shadows%20b5b3b66d76a94abab8e78f6e8e1605bd/Untitled%2017.png)
+
+也就是说本质上这个是一个4个插值器进行加权的采样器，但是需要采样到周围3*3的区域。
+
+所以这里每一个插值器都是由一个2*2的纹素区域加权之后而成的。（因为采样的时候是会有双线性插值，这里不用纠结为什么这个红色点还能够采到样，这个和在CPU里面实现是不一样的。顺便贴一个以前写的笔记：[https://github.com/waihinchan/learning/blob/master/笔记/Pixel outline test.md](https://github.com/waihinchan/learning/blob/master/%E7%AC%94%E8%AE%B0/Pixel%20outline%20test.md)）
+
+所以说SampleShadow_ComputeSamples_Tent_3x3本质上是计算四个采样点加权后的结果。而这个权重是怎么定的呢？
+
+Unity通过使用两个个高度为1.5纹素 底边为3纹素的等腰三角形沿着这个3*3的区域的对角线切开。根据这些三角形所占据的纹素的面积来决定权重。
+
+这里说的有点抽象给一个图，同时给一个Unity源代码里面的注释：
+
+```glsl
+// Assuming a isoceles triangle of 1.5 texels height and 3 texels wide lying on 4 texels.
+// This function return the area of the triangle above each of those texels.
+//    |    <-- offset from -0.5 to 0.5, 0 meaning triangle is exactly in the center
+//   / \   <-- 45 degree slop isosceles triangle (ie tent projected in 2D)
+//  /   \
+// _ _ _ _ <-- texels
+// X Y Z W <-- result indices (in computedArea.xyzw and computedAreaUncut.xyzw)
+```
+
+这里说的意思是这个底边为3个纹素单位的等腰直角三角形是横跨了4个像素格的。也就是如下：
+
+![shadows%20b5b3b66d76a94abab8e78f6e8e1605bd/Untitled%2018.png](shadows%20b5b3b66d76a94abab8e78f6e8e1605bd/Untitled%2018.png)
+
+同时源码中也提到了：
+
+```glsl
+// 3x3 Tent filter (45 degree sloped triangles in U and V)
+void SampleShadow_ComputeSamples_Tent_3x3(real4 shadowMapTexture_TexelSize, real2 coord, out real fetchesWeights[4], out real2 fetchesUV[4])
+```
+
+注意！接下来的内容可能都是口糊，都是基于一些假设下才成立的。如果这一步开始错了，那么就是我对个tent filter的实现细节理解错了
+
+所以这里我们把这个三角形旋转一下得到如下的一个图：
+
+![shadows%20b5b3b66d76a94abab8e78f6e8e1605bd/Untitled%2019.png](shadows%20b5b3b66d76a94abab8e78f6e8e1605bd/Untitled%2019.png)
+
+当然它也有可能长这样：（如果特别纠结那个底边是不是跨越了4个纹素的话）
+
+![shadows%20b5b3b66d76a94abab8e78f6e8e1605bd/Untitled%2020.png](shadows%20b5b3b66d76a94abab8e78f6e8e1605bd/Untitled%2020.png)
+
+所以基于上面的这么一个图，我们可以看出来Unity的确也是会把这个区域分割成3*3，同时它会对U和V的方向分别去计算这两个三角形所覆盖的面积。也就是有了如下的内容：
+
+```glsl
+real4 texelsWeightsU, texelsWeightsV;
+SampleShadow_GetTexelWeights_Tent_3x3(offsetFromTentCenterToCenterOfFetches.x, texelsWeightsU);
+SampleShadow_GetTexelWeights_Tent_3x3(offsetFromTentCenterToCenterOfFetches.y, texelsWeightsV);
+real2 fetchesWeightsU = texelsWeightsU.xz + texelsWeightsU.yw;
+real2 fetchesWeightsV = texelsWeightsV.xz + texelsWeightsV.yw;
+```
+
+那么这个以UV作为维度的计算权重方式是怎么样的呢？
+
+关键代码如下：
+
+```glsl
+// Assuming a isoceles triangle of 1.5 texels height and 3 texels wide lying on 4 texels.
+// This function return the area of the triangle above each of those texels.
+//    |    <-- offset from -0.5 to 0.5, 0 meaning triangle is exactly in the center
+//   / \   <-- 45 degree slop isosceles triangle (ie tent projected in 2D)
+//  /   \
+// _ _ _ _ <-- texels
+// X Y Z W <-- result indices (in computedArea.xyzw and computedAreaUncut.xyzw)
+void SampleShadow_GetTexelAreas_Tent_3x3(real offset, out real4 computedArea, out real4 computedAreaUncut)
+{
+    // Compute the exterior areas
+    real offset01SquaredHalved = (offset + 0.5) * (offset + 0.5) * 0.5;
+    computedAreaUncut.x = computedArea.x = offset01SquaredHalved - offset;
+    computedAreaUncut.w = computedArea.w = offset01SquaredHalved;
+
+    // Compute the middle areas
+    // For Y : We find the area in Y of as if the left section of the isoceles triangle would
+    // intersect the axis between Y and Z (ie where offset = 0).
+    computedAreaUncut.y = SampleShadow_GetTriangleTexelArea(1.5 - offset);
+    // This area is superior to the one we are looking for if (offset < 0) thus we need to
+    // subtract the area of the triangle defined by (0,1.5-offset), (0,1.5+offset), (-offset,1.5).
+    real clampedOffsetLeft = min(offset,0);
+    real areaOfSmallLeftTriangle = clampedOffsetLeft * clampedOffsetLeft;
+    computedArea.y = computedAreaUncut.y - areaOfSmallLeftTriangle;
+
+    // We do the same for the Z but with the right part of the isoceles triangle
+    computedAreaUncut.z = SampleShadow_GetTriangleTexelArea(1.5 + offset);
+    real clampedOffsetRight = max(offset,0);
+    real areaOfSmallRightTriangle = clampedOffsetRight * clampedOffsetRight;
+    computedArea.z = computedAreaUncut.z - areaOfSmallRightTriangle;
+}
+```
+
+这里有一个叫offset的东西，其实也就是我们上面的图的一般情况。换言之当我们的采样卷积核并不是准确落在纹素中心的时候，也就意味着我们两个三角形区域会发生偏移。而这个偏移会导致某一些位置的权重发生变化。这里有一个图去描述这种情况：
+
+![shadows%20b5b3b66d76a94abab8e78f6e8e1605bd/Untitled%2021.png](shadows%20b5b3b66d76a94abab8e78f6e8e1605bd/Untitled%2021.png)
+
+前面也说了计算权重的方法是通过计算这些三角形覆盖的纹素的面积而定的，一旦发生了偏移，三角形覆盖的部分纹素的面积就会发生变化，从而使某一些区域的权重会有所变化。（这里三角形的总面积是不变的，但是三角形覆盖到的每一个纹素的面积是会变化的。）
+
+所以上述的这个SampleShadow_GetTexelAreas_Tent_3x3函数会返回一个四分量，而这个四分量分别代表了这一个三角形所覆盖到的不同纹素的面积。这里描述的仍然是非常抽象。我们直接看代码。
+
+```glsl
+    real offset01SquaredHalved = (offset + 0.5) * (offset + 0.5) * 0.5;
+    computedAreaUncut.x = computedArea.x = offset01SquaredHalved - offset;
+    computedAreaUncut.w = computedArea.w = offset01SquaredHalved;
+```
+
+这里如果没有图根本想象不出来好吗！
+
+![shadows%20b5b3b66d76a94abab8e78f6e8e1605bd/Untitled%2022.png](shadows%20b5b3b66d76a94abab8e78f6e8e1605bd/Untitled%2022.png)
+
+有了这个图就可以看出来，x和w分别代表了左上角和右下角那两个小三角形的区域。这个offset是以中心为定的，我们可以通过简单的三角形求面积求出其中一个也就是(offset + 0.5) * (offset + 0.5) * 0.5。而另外一个由于一边的边长增加或减少，另外一边的边长就必然会增加或减少。而通过一通计算之后可以得出其实另外一个三角形的面积就是等于第一个三角形的面积减去offset的数值。这里可以去验算一下以防我算错了。
+
+同理y和z就是这个大的三角形的面积减去这两个小三角形的面积的一半。一个简单的方法就是把offset=0代入去计算一下就可以了。
+
+我当时演算了很久看到这里我还是懵逼的，就是不太理解为什么要这样拆分成xyzw，而且拆分出来的xyzw也不是一一对应每一个纹素的面积的。可以看到部分区域也是跨越了几个纹素。
+
+然后我作了这么一个图（其实我到这一步是卡住的，我是后来才找到上面的那个3*3tentfilter其实是用四个点来采样的图，如果没有那个图是完全不明白这里为什么要这么做的。）
+
+![shadows%20b5b3b66d76a94abab8e78f6e8e1605bd/Untitled%2023.png](shadows%20b5b3b66d76a94abab8e78f6e8e1605bd/Untitled%2023.png)
+
+由于上面提到了采样的方式是通过4个 2*2的区域来进行加权的。那么当我们用一些颜色区域对这些区域划分一下我们就会发现，即使是同一个对角三角形下，有一些面积的区域也是共享的。而这个xyzw只是为了划分那4个2*2所用到的区域而生。而非单独计算每一个覆盖到的纹素的面积是多少。
+
+比如说左上角的2*2的区域必然会有我们计算的x_v和x_u（u和v是分别计算的）的三角形面积，但是左上角的2*2区域和左下角的2*2区域其实是有重叠的部分，重叠的部分就是第一列第二行和第二列第二行的区域。同理左上角和右上角的2*2区域的重叠部分就是第一行第二列和第二行第二列的区域。
+
+而当发生offset的时候，这些重叠部分的也会发生变化，也就是xyzw四个分量共同控制了这些分割区域的差异。
+
+而这里的代码也印证了我的想法（三角形面积等于2.25，1/2.25约等于0.44444，也就是最终计算出来的xyzw是除以三角形面积。即xyzw显然是局部面积。而最终结果是一个比值。）
+
+```glsl
+void SampleShadow_GetTexelWeights_Tent_3x3(real offset, out real4 computedWeight)
+{
+    real4 dummy;
+    SampleShadow_GetTexelAreas_Tent_3x3(offset, computedWeight, dummy);
+    computedWeight *= 0.44444;//0.44 == 1/(the triangle area)
+}
+```
+
+这里就解释了这个xyzw是用来做什么的。然后关于后面的一些计算细节比如如何通过这个四分量计算各个2*2区域的权重（比如合并u和v的面积）以及重新把这些坐标点映射到全局坐标点也就是片段着色器中用于采样的那一个uv坐标点就不描述了。~~（看不下去了）~~
+
+完整的代码可以到unity的github或者随便一个工程文件里面查看，源文件名称叫：ShadowSamplingTent.hlsl
