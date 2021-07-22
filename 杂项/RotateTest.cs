@@ -1,5 +1,5 @@
 using UnityEngine;
-
+//记录 不太记得这个做什么了 懒得测试 大概看了一下应该是让某一个方向旋转得到另外一个方向。
 public class RotateTest : MonoBehaviour
 {
     //This is the Transform of the second GameObject
